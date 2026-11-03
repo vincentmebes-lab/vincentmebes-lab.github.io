@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Impact Finance – A Short Introduction</title>
+<meta name="description" content="A short introduction to impact finance: what it is, where it sits on the spectrum of capital, and how impact is measured.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #EEF1EC;
+    --surface: #F8FAF7;
+    --ink: #1E2A28;
+    --muted: #5E6B68;
+    --line: #C9D2CC;
+    --teal: #1F5C57;
+    --ochre: #B8861E;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #131C1A;
+      --surface: #1A2522;
+      --ink: #E4EAE6;
+      --muted: #9AA8A3;
+      --line: #33423E;
+      --teal: #7CC0B4;
+      --ochre: #DDB65C;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.65;
+  }
+  main { max-width: 44rem; margin: 0 auto; padding: 4rem 1.5rem 3rem; }
+
+  h1, h2, h3 { font-weight: 500; line-height: 1.15; margin: 0; }
+  h1 { font-size: clamp(2.4rem, 7vw, 3.8rem); letter-spacing: -0.015em; max-width: 14ch; }
+  h2 { font-size: 1.75rem; margin-top: 4rem; margin-bottom: 1rem; }
+  h3 { font-size: 1.2rem; font-weight: 600; }
+  p { margin: 0 0 1rem; }
+  a { color: var(--teal); text-underline-offset: 0.18em; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 3px; }
+
+  .lede { font-size: 1.3rem; color: var(--muted); margin-top: 1.5rem; max-width: 36rem; }
+
+  /* Spectrum of capital: the one bold element */
+  .spectrum { margin-top: 3rem; font-family: var(--sans); }
+  .spectrum-ends { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }
+  .bands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .band {
+    font: inherit; font-size: 0.85rem; font-weight: 500;
+    min-height: 5.5rem; padding: 0.6rem; text-align: left; vertical-align: top;
+    border: 1px solid var(--line); border-radius: 2px;
+    background: var(--surface); color: var(--ink); cursor: pointer;
+    display: flex; align-items: flex-end;
+    transition: background-color 0.2s, color 0.2s;
+  }
+  .band:first-child { border-radius: 10px 2px 2px 10px; }
+  .band:last-child { border-radius: 2px 10px 10px 2px; }
+  .band[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--bg); }
+  .band.impact { border-width: 2px; border-color: var(--ochre); }
+  .band.impact[aria-pressed="true"] { background: var(--ochre); border-color: var(--ochre); color: #1E2A28; }
+  .band-detail {
+    margin-top: 1rem; padding: 1.25rem 1.4rem;
+    background: var(--surface); border-left: 3px solid var(--teal);
+    font-family: var(--serif); min-height: 7.5rem;
+  }
+  .band-detail h3 { margin-bottom: 0.4rem; }
+  .band-detail p { margin: 0; color: var(--muted); }
+  @media (max-width: 560px) {
+    .bands { grid-template-columns: 1fr; }
+    .band, .band:first-child, .band:last-child { min-height: auto; border-radius: 2px; padding: 0.75rem; }
+  }
+
+  .traits { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
+  @media (min-width: 640px) { .traits { grid-template-columns: repeat(3, 1fr); } }
+  .traits h3 { color: var(--teal); margin-bottom: 0.35rem; }
+  .traits p { font-size: 1rem; color: var(--muted); margin: 0; }
+
+  dl { margin: 1.5rem 0 0; }
+  dt { font-family: var(--sans); font-weight: 600; font-size: 0.95rem; margin-top: 1.25rem; }
+  dd { margin: 0.2rem 0 0; color: var(--muted); }
+
+  .questions { list-style: none; padding: 0; margin: 1.5rem 0 0; border-top: 1px solid var(--line); }
+  .questions li { padding: 0.9rem 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; }
+  .questions strong { font-family: var(--sans); font-weight: 600; font-size: 0.95rem; }
+  .questions span { color: var(--muted); }
+  @media (max-width: 560px) { .questions li { grid-template-columns: 1fr; gap: 0.2rem; } }
+
+  .reading { padding-left: 1.2rem; }
+  .reading li { margin-bottom: 0.5rem; }
+
+  footer { max-width: 44rem; margin: 0 auto; padding: 2rem 1.5rem 3rem; font-family: var(--sans); font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); }
+
+  @media (prefers-reduced-motion: reduce) { .band { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Money that has to answer two questions</h1>
+    <p class="lede">Traditional investing asks “what will this earn?” Impact finance also asks “what will this change?”, and it expects an answer to both.</p>
+  </header>
+
+  <section class="spectrum" aria-labelledby="spectrum-title">
+    <h2 id="spectrum-title" style="font-family: var(--serif);">The spectrum of capital</h2>
+    <p style="font-family: var(--serif); color: var(--muted);">Capital runs on a continuum, from investments judged only on returns to grants judged only on outcomes. Select a band to see what it means.</p>
+    <div class="spectrum-ends" aria-hidden="true"><span>Financial return first</span><span>Impact first</span></div>
+    <div class="bands" role="group" aria-label="Spectrum of capital">
+      <button class="band" data-i="0" aria-pressed="false">Traditional</button>
+      <button class="band" data-i="1" aria-pressed="false">Responsible</button>
+      <button class="band" data-i="2" aria-pressed="false">Sustainable</button>
+      <button class="band impact" data-i="3" aria-pressed="true">Impact investing</button>
+      <button class="band" data-i="4" aria-pressed="false">Philanthropy</button>
+    </div>
+    <div class="band-detail" id="detail" aria-live="polite">
+      <h3>Impact investing</h3>
+      <p>Investments made with the intention to generate measurable social or environmental benefits alongside a financial return, ranging from below-market to market-rate.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="what-title">
+    <h2 id="what-title">What makes an investment “impact”</h2>
+    <p>Many funds call themselves sustainable. Impact investing is narrower, and most definitions rest on three features.</p>
+    <div class="traits">
+      <div>
+        <h3>Intention</h3>
+        <p>The investor sets out to cause a specific positive outcome, not just to avoid harm.</p>
+      </div>
+      <div>
+        <h3>Measurement</h3>
+        <p>Outcomes are tracked and reported, so claims about impact can be checked.</p>
+      </div>
+      <div>
+        <h3>Return</h3>
+        <p>Capital is expected back, and often more, which separates it from a grant.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="where-title">
+    <h2 id="where-title">Where the money goes</h2>
+    <p>Impact capital flows through almost every asset class.</p>
+    <dl>
+      <dt>Private equity and venture capital</dt>
+      <dd>Ownership stakes in companies whose products solve a problem, such as clean energy, affordable healthcare or financial inclusion.</dd>
+      <dt>Private debt and microfinance</dt>
+      <dd>Loans to small businesses, cooperatives or households that conventional banks underserve.</dd>
+      <dt>Green and social bonds</dt>
+      <dd>Fixed-income instruments whose proceeds are earmarked for eligible projects, issued by companies, banks and governments.</dd>
+      <dt>Real assets</dt>
+      <dd>Affordable housing, sustainable forestry, regenerative agriculture and renewable infrastructure.</dd>
+      <dt>Blended finance</dt>
+      <dd>Structures where public or philanthropic money takes on extra risk so private investors can join deals they would otherwise avoid.</dd>
+    </dl>
+  </section>
+
+  <section aria-labelledby="measure-title">
+    <h2 id="measure-title">How impact gets measured</h2>
+    <p>A common approach, developed through the Impact Management Project, looks at impact along five dimensions.</p>
+    <ul class="questions">
+      <li><strong>What</strong><span>Which outcome occurs, and does it matter to the people affected?</span></li>
+      <li><strong>Who</strong><span>Who experiences it, and how underserved were they before?</span></li>
+      <li><strong>How much</strong><span>How many people, how deep a change, and for how long?</span></li>
+      <li><strong>Contribution</strong><span>Would it have happened anyway without this investment?</span></li>
+      <li><strong>Risk</strong><span>How likely is it that the impact turns out differently than expected?</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="debate-title">
+    <h2 id="debate-title">The open debates</h2>
+    <p><strong>Impact washing.</strong> As the label grows popular, some products use it with little evidence behind it. Independent verification and clear reporting standards are the main safeguards.</p>
+    <p><strong>Additionality.</strong> Buying shares in a listed company rarely changes what that company does. Critics argue real impact comes where capital is scarce, not where it is abundant.</p>
+    <p><strong>Returns versus impact.</strong> Whether investors must accept lower returns for deeper impact is still contested, and the answer depends heavily on the asset class and market.</p>
+  </section>
+
+  <section aria-labelledby="read-title">
+    <h2 id="read-title">Further reading</h2>
+    <ul class="reading">
+      <li><a href="https://thegiin.org">Global Impact Investing Network (GIIN)</a> for definitions, market research and the IRIS+ metrics</li>
+      <li><a href="https://impactfrontiers.org">Impact Frontiers</a> for the five dimensions of impact in practice</li>
+      <li><a href="https://www.icmagroup.org/sustainable-finance/">ICMA</a> for the Green and Social Bond Principles</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  Written as an introduction to impact finance. Hosted for free with GitHub Pages.
+</footer>
+
+<script>
+  const bands = [
+    { t: "Traditional", d: "Investments chosen on risk and return alone, with environmental and social factors largely ignored." },
+    { t: "Responsible", d: "Mainstream investing that screens out harmful sectors or manages ESG risks that could hurt returns." },
+    { t: "Sustainable", d: "Portfolios that actively favour companies with strong ESG practices, aiming for long-term resilience." },
+    { t: "Impact investing", d: "Investments made with the intention to generate measurable social or environmental benefits alongside a financial return, ranging from below-market to market-rate." },
+    { t: "Philanthropy", d: "Grants given purely for social or environmental outcomes, with no expectation of the money coming back." }
+  ];
+  const detail = document.getElementById("detail");
+  document.querySelectorAll(".band").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".band").forEach(b => b.setAttribute("aria-pressed", "false"));
+      btn.setAttribute("aria-pressed", "true");
+      const b = bands[btn.dataset.i];
+      detail.style.borderLeftColor = btn.classList.contains("impact") ? "var(--ochre)" : "var(--teal)";
+      detail.innerHTML = "<h3>" + b.t + "</h3><p>" + b.d + "</p>";
+    });
+  });
+  detail.style.borderLeftColor = "var(--ochre)";
+</script>
+</body>
+</html>
