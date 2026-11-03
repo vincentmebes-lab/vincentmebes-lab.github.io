@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What moves the mean?</title>
+<style>
+  /* Colours as variables, with dark-mode versions */
+  :root {
+    --bg: #EEF1EC; --surface: #F8FAF7; --ink: #1E2A28; --muted: #5E6B68;
+    --line: #C9D2CC; --dot: #1F5C57; --outlier: #B8861E; --mean: #B23A48; --median: #2F5DA8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131C1A; --surface: #1A2522; --ink: #E4EAE6; --muted: #9AA8A3;
+      --line: #33423E; --dot: #7CC0B4; --outlier: #DDB65C; --mean: #F07C88; --median: #8CB1F0;
+    }
+  }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: Georgia, "Times New Roman", serif; line-height: 1.6; }
+  main { max-width: 44rem; margin: 0 auto; padding: 3rem 1.5rem; }
+  h1 { font-weight: 500; font-size: 2.2rem; line-height: 1.2; margin: 0 0 0.75rem; }
+  p { color: var(--muted); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1.25rem; margin-top: 1.5rem; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls { display: grid; gap: 1rem; margin-top: 1rem; font-family: system-ui, sans-serif; font-size: 0.95rem; }
+  label { display: grid; grid-template-columns: 11rem 1fr 3.5rem; align-items: center; gap: 0.75rem; }
+  input[type=range] { width: 100%; accent-color: var(--dot); }
+  output { text-align: right; font-variant-numeric: tabular-nums; }
+  .stats { display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1rem; font-family: system-ui, sans-serif; }
+  .stats div { font-size: 0.9rem; color: var(--muted); }
+  .stats strong { display: block; font-size: 1.5rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .k-mean { color: var(--mean) !important; } .k-median { color: var(--median) !important; }
+  @media (max-width: 520px) { label { grid-template-columns: 1fr 3.5rem; } label span { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>What moves the mean?</h1>
+  <p>Twenty observations, shown as dots. Move the sliders and watch how the mean (red) and the median (blue) react. Notice how one extreme value drags the mean but barely touches the median.</p>
+
+  <div class="panel">
+    <svg id="chart" viewBox="0 0 600 160" role="img" aria-label="Dot plot of the data with mean and median lines"></svg>
+
+    <div class="controls">
+      <label><span>Shift all values</span>
+        <input type="range" id="shift" min="-20" max="20" value="0" step="1"><output id="shiftOut">0</output></label>
+      <label><span>Spread (scale)</span>
+        <input type="range" id="spread" min="0.2" max="2" value="1" step="0.1"><output id="spreadOut">1.0</output></label>
+      <label><span>One outlier’s value</span>
+        <input type="range" id="outlier" min="50" max="100" value="55" step="1"><output id="outlierOut">55</output></label>
+    </div>
+
+    <div class="stats">
+      <div class="k-mean">Mean<strong id="mean">–</strong></div>
+      <div class="k-median">Median<strong id="median">–</strong></div>
+      <div>Std. deviation<strong id="sd">–</strong></div>
+    </div>
+  </div>
+
+  <p>Try it: a shift moves mean and median by the same amount; scaling widens the spread but leaves the centre in place; the outlier only really moves the mean.</p>
+</main>
+
+<script>
+  // 1) Base data: 19 fixed values around 50, plus one "outlier" controlled by a slider
+  const base = [42, 44, 45, 46, 47, 48, 48, 49, 50, 50, 51, 52, 52, 53, 54, 55, 56, 57, 58];
+
+  // 2) Helper functions for the statistics
+  const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+  const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length / 2;
+                        return s.length % 2 ? s[Math.floor(m)] : (s[m - 1] + s[m]) / 2; };
+  const sd = a => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)); };
+
+  // 3) Map a data value (0–120) to an x position on the 600px-wide chart
+  const X_MIN = 0, X_MAX = 120;
+  const toX = v => 30 + (Math.max(X_MIN, Math.min(X_MAX, v)) - X_MIN) / (X_MAX - X_MIN) * 540;
+
+  const svg = document.getElementById("chart");
+  const $ = id => document.getElementById(id);
+
+  // 4) Redraw everything whenever a slider moves
+  function update() {
+    const shift = +$("shift").value, spread = +$("spread").value, out = +$("outlier").value;
+    $("shiftOut").textContent = shift;
+    $("spreadOut").textContent = spread.toFixed(1);
+    $("outlierOut").textContent = out;
+
+    // Transform data: scale around 50, then shift
+    const regular = base.map(v => 50 + (v - 50) * spread + shift);
+    const outlier = out + shift;
+    const data = [...regular, outlier];
+    const m = mean(data), md = median(data);
+
+    $("mean").textContent = m.toFixed(1);
+    $("median").textContent = md.toFixed(1);
+    $("sd").textContent = sd(data).toFixed(1);
+
+    // Build the SVG: axis, ticks, dots, then mean/median lines
+    let s = `<line x1="30" y1="120" x2="570" y2="120" stroke="var(--line)" stroke-width="1.5"/>`;
+    for (let t = 0; t <= 120; t += 20) {
+      s += `<line x1="${toX(t)}" y1="120" x2="${toX(t)}" y2="126" stroke="var(--line)"/>
+            <text x="${toX(t)}" y="142" font-size="12" text-anchor="middle" fill="var(--muted)" font-family="system-ui">${t}</text>`;
+    }
+    // Stack dots that share a similar value so they don't overlap
+    const counts = {};
+    data.forEach((v, i) => {
+      const key = Math.round(v), n = counts[key] = (counts[key] || 0) + 1;
+      const isOut = i === data.length - 1;
+      s += `<circle cx="${toX(v)}" cy="${112 - (n - 1) * 11}" r="5" fill="${isOut ? "var(--outlier)" : "var(--dot)"}"/>`;
+    });
+    s += `<line x1="${toX(md)}" y1="20" x2="${toX(md)}" y2="120" stroke="var(--median)" stroke-width="2" stroke-dasharray="5 4"/>
+          <line x1="${toX(m)}" y1="20" x2="${toX(m)}" y2="120" stroke="var(--mean)" stroke-width="2"/>`;
+    svg.innerHTML = s;
+  }
+
+  ["shift", "spread", "outlier"].forEach(id => $(id).addEventListener("input", update));
+  update();
+</script>
+</body>
+</html>
