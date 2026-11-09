@@ -1,0 +1,665 @@
+---
+title: "Dell, Jones & Olken (2012): Replication and Extension"
+subtitle: "Temperature Shocks and Economic Growth (AEJ: Macro 4(3))"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# 0. Setup
+
+**Folder:** put this file in one folder together with
+
+- `climate_panel.dta` and `AreaWeightedClimate.dta` (replication package, openICPSR 114251)
+- the WDI CSV for `NY.GDP.PCAP.KN` (any file name starting with `API_NY`)
+
+The CRU climate data are downloaded automatically in section 1 if `cru_country_year.csv` does not exist yet.
+
+**Packages** (install once):
+`install.packages(c("haven", "dplyr", "tidyr", "fixest", "countrycode", "ggplot2"))`
+
+```{r packages}
+library(haven)
+library(dplyr)
+library(tidyr)
+library(fixest)
+library(countrycode)
+library(ggplot2)
+
+end_year <- 2024   # last year in the extension; 2025 GDP data are often incomplete
+
+# Check that the input files are there
+wdi_file <- list.files(".", pattern = "^API_NY.*GDP.*PCAP.*KN.*\\.csv$")[1]
+needed   <- c("climate_panel.dta", "AreaWeightedClimate.dta")
+stopifnot("Replication .dta files missing from this folder" = all(file.exists(needed)),
+          "WDI CSV (API_NY...csv) missing from this folder" = !is.na(wdi_file))
+cat("Working directory:", getwd(), "\nWDI file:", wdi_file, "\n")
+```
+
+# 1. Download the CRU-CY climate data
+
+Downloads the CRU-CY v4.10 country files for temperature (`tmp`) and precipitation (`pre`), parses them and saves `cru_country_year.csv`. **Skipped automatically if that file already exists.** The first run takes a few minutes.
+
+Source: Harris et al. (2020), *Scientific Data*, doi:10.1038/s41597-020-0453-3.
+
+```{r cru-download}
+read_per <- function(path) {
+  hdr     <- readLines(path, n = 2)
+  country <- trimws(sub(":.*", "", sub("^Country = ", "", hdr[2])))
+  param   <- trimws(sub(":.*", "", sub(".*Parameter = ", "", hdr[2])))
+  fname   <- basename(path)
+  var <- if (grepl("tmp", fname, ignore.case = TRUE)) "tmp" else
+         if (grepl("pre", fname, ignore.case = TRUE)) "pre" else
+         if (grepl("temp", param, ignore.case = TRUE)) "tmp" else
+         if (grepl("precip", param, ignore.case = TRUE)) "pre" else NA
+  x <- read.table(path, skip = 3, header = TRUE, na.strings = "-999.0")
+  data.frame(cru_name = country, var = var, year = x$YEAR, value = x$ANN)
+}
+
+if (!file.exists("cru_country_year.csv")) {
+  base <- "https://crudata.uea.ac.uk/cru/data/hrg/cru_ts_4.10/crucy.2606161920.v4.10/countries/"
+  dir.create("cru_files", showWarnings = FALSE)
+  for (v in c("tmp", "pre")) {
+    url   <- paste0(base, v, "/")
+    html  <- readLines(url, warn = FALSE)
+    files <- unique(regmatches(html, regexpr('[^"/>]+\\.per', html)))
+    cat(v, ":", length(files), "files\n")
+    for (f in files) {
+      dest <- file.path("cru_files", f)
+      if (!file.exists(dest)) download.file(paste0(url, f), dest, quiet = TRUE)
+    }
+  }
+  paths <- list.files("cru_files", pattern = "\\.per$", full.names = TRUE)
+  out   <- do.call(rbind, lapply(paths, read_per))
+  write.csv(out, "cru_country_year.csv", row.names = FALSE)
+}
+
+cru <- read.csv("cru_country_year.csv")
+table(cru$var)   # should be about 36,500 each
+```
+
+# 2. Replication of Table 2
+
+R translation of `maketable2.do`.
+
+## 2.1 Data preparation
+
+```{r rep-data}
+d <- read_dta("climate_panel.dta") |>
+  filter(year <= 2003) |>                       # paper's sample ends in 2003
+  arrange(fips60_06, year) |>
+  group_by(fips60_06) |>
+  mutate(
+    # growth of GDP per capita (WDI, constant LCU) in %
+    g   = ifelse(lag(year) == year - 1,
+                 100 * (log(gdpLCU) - log(lag(gdpLCU))), NA),
+    n_g = sum(!is.na(g))
+  ) |>
+  ungroup() |>
+  filter(n_g >= 20)                             # at least 20 years of growth data
+
+# "Poor" = below-median initial PPP GDP p.c. (one obs per country).
+# The .do file takes ln() of lnrgdpl_t0 (log of a log); monotonic, so the split is unchanged.
+ctry <- d |> filter(!is.na(lnrgdpl_t0)) |> distinct(fips60_06, .keep_all = TRUE)
+med  <- quantile(ctry$lnrgdpl_t0, 0.5, type = 2)          # type 2 = Stata's xtile
+ctry$poor <- as.integer(ctry$lnrgdpl_t0 <= med)
+
+# "Hot" = above-median 1950s temperature (used in Table 2, column 4)
+ctry_h <- d |> filter(!is.na(wtem50)) |> distinct(fips60_06, .keep_all = TRUE)
+ctry_h$hot <- as.integer(ctry_h$wtem50 > quantile(ctry_h$wtem50, 0.5, type = 2))
+
+regs <- c("_MENA", "_SSAF", "_LAC", "_WEOFF", "_EECA", "_SEAS")
+d$region <- NA_character_
+for (r in regs) d$region[d[[r]] == 1] <- r
+
+d <- d |>
+  left_join(select(ctry,   fips60_06, poor), by = "fips60_06") |>
+  left_join(select(ctry_h, fips60_06, hot),  by = "fips60_06") |>
+  mutate(region_year = paste0(region, year),
+         wtem_poor = wtem * poor, wpre_poor = wpre * poor,
+         wtem_hot  = wtem * hot,  wpre_hot  = wpre * hot)
+
+est <- d |> filter(!is.na(g), !is.na(poor))
+cat("Observations:", nrow(est), " Countries:", n_distinct(est$fips60_06),
+    " Years:", min(est$year), "-", max(est$year), "\n")
+```
+
+## 2.2 Estimation
+
+Fixed effects: country, region × year, poor × year. Standard errors two-way clustered by parent country and region × year (as `cgmreg` in the paper).
+
+```{r rep-estimates}
+cl <- ~ parent + region_year
+
+m1 <- feols(g ~ wtem                                        | fips60_06 + region^year + poor^year, est, cluster = cl)
+m2 <- feols(g ~ wtem + wtem_poor                            | fips60_06 + region^year + poor^year, est, cluster = cl)
+m3 <- feols(g ~ wtem + wtem_poor + wpre + wpre_poor         | fips60_06 + region^year + poor^year, est, cluster = cl)
+m4 <- feols(g ~ wtem + wtem_poor + wpre + wpre_poor +
+                wtem_hot + wpre_hot                         | fips60_06 + region^year + poor^year, est, cluster = cl)
+
+etable(m1, m2, m3, m4, digits = 3,
+       signif.code = c("***" = .01, "**" = .05, "*" = .10),
+       headers = c("(1)", "(2)", "(3)", "(4)"))
+```
+
+## 2.3 Effect in poor countries
+
+β(temperature) + β(temperature × poor), the equivalent of Stata's `lincom`.
+
+```{r poor-effect}
+poor_effect <- function(m, v, suffix = "_poor") {
+  b <- coef(m); V <- vcov(m); vp <- paste0(v, suffix)
+  e  <- unname(b[v] + b[vp])
+  se <- unname(sqrt(V[v, v] + V[vp, vp] + 2 * V[v, vp]))
+  c(effect = e, se = se, p = 2 * pnorm(-abs(e / se)))
+}
+
+round(rbind(
+  "Col 2, temperature"   = poor_effect(m2, "wtem"),
+  "Col 3, temperature"   = poor_effect(m3, "wtem"),
+  "Col 3, precipitation" = poor_effect(m3, "wpre"),
+  "Col 4, temperature"   = poor_effect(m4, "wtem")
+), 3)
+```
+
+## 2.4 Figure: poor vs. rich countries
+
+```{r fig-effects}
+fig <- data.frame(
+  group = factor(c("Rich countries", "Poor countries"),
+                 levels = c("Rich countries", "Poor countries")),
+  est   = c(coef(m3)["wtem"], poor_effect(m3, "wtem")["effect"]),
+  se    = c(se(m3)["wtem"],   poor_effect(m3, "wtem")["se"])
+)
+
+ggplot(fig, aes(group, est)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), size = 0.8) +
+  labs(x = NULL, y = "Effect of +1°C on annual growth (pp)",
+       title = "Effect of a 1°C warmer year on economic growth",
+       subtitle = "Table 2, column 3; 95% confidence intervals") +
+  theme_minimal()
+```
+
+# 3. Robustness
+
+## 3.1 Placebo: future temperature
+
+Next year's temperature should not affect this year's growth. A significant lead would suggest a problem with the design.
+
+```{r placebo}
+est <- est |>
+  arrange(fips60_06, year) |>
+  group_by(fips60_06) |>
+  mutate(wtem_lead = ifelse(lead(year) == year + 1, lead(wtem), NA)) |>
+  ungroup() |>
+  mutate(wtem_lead_poor = wtem_lead * poor)
+
+m_lead <- feols(g ~ wtem + wtem_poor + wtem_lead + wtem_lead_poor |
+                  fips60_06 + region^year + poor^year, est, cluster = cl)
+
+round(rbind(
+  "Contemporaneous temperature, poor" = poor_effect(m_lead, "wtem"),
+  "Next year's temperature, poor"     = poor_effect(m_lead, "wtem_lead")
+), 3)
+```
+
+## 3.2 Sensitivity to the data: temperature weighting and GDP vintage
+
+Changing one input at a time, original period only:
+
+- area-weighted instead of population-weighted temperature (the paper's own `AreaWeightedClimate.dta`)
+- the current WDI vintage instead of the 2011 GDP data
+
+```{r sensitivity}
+# (a) area-weighted temperature
+aw  <- read_dta("AreaWeightedClimate.dta")
+est <- est |>
+  left_join(aw, by = c("fips60_06", "year")) |>
+  mutate(atem_poor = atem * poor, apre_poor = apre * poor)
+
+m_aw <- feols(g ~ atem + atem_poor + apre + apre_poor |
+                fips60_06 + region^year + poor^year, est, cluster = cl)
+
+# (b) current WDI GDP vintage
+w   <- read.csv(wdi_file, skip = 4, check.names = FALSE)
+yrs <- grep("^[0-9]{4}$", names(w), value = TRUE)
+wdi <- w |>
+  select(iso3 = `Country Code`, all_of(yrs)) |>
+  pivot_longer(-iso3, names_to = "year", values_to = "gdp_pc") |>
+  mutate(year = as.integer(year)) |>
+  filter(!is.na(gdp_pc), gdp_pc > 0) |>
+  arrange(iso3, year) |>
+  group_by(iso3) |>
+  mutate(g_new = ifelse(lag(year) == year - 1,
+                        100 * (log(gdp_pc) - log(lag(gdp_pc))), NA)) |>
+  ungroup()
+
+est <- est |>
+  mutate(iso3 = recode(country_code, ROM = "ROU", ZAR = "COD")) |>
+  left_join(select(wdi, iso3, year, g_new), by = c("iso3", "year"))
+
+m_wdi <- feols(g_new ~ wtem + wtem_poor + wpre + wpre_poor |
+                 fips60_06 + region^year + poor^year, est, cluster = cl)
+
+round(rbind(
+  "Paper (pop-weighted temp, 2011 WDI)"   = poor_effect(m3,    "wtem"),
+  "Area-weighted temp, 2011 WDI"          = poor_effect(m_aw,  "atem"),
+  "Pop-weighted temp, current WDI"        = poor_effect(m_wdi, "wtem")
+), 3)
+```
+
+# 4. Extension: new data up to `r end_year`
+
+## 4.1 Country definitions from the paper
+
+Poor/rich, region and parent country are taken from the paper, so only the data change. Romania (ROM → ROU) and DR Congo (ZAR → COD) changed codes; Yugoslavia drops out.
+
+```{r ext-info}
+info <- ctry |>
+  mutate(region = NA_character_)
+for (r in regs) info$region[info[[r]] == 1] <- r
+info <- info |>
+  transmute(fips60_06, parent, region, poor,
+            iso3 = recode(country_code, ROM = "ROU", ZAR = "COD"))
+cat("Paper countries:", nrow(info), " poor:", sum(info$poor), "\n")
+```
+
+## 4.2 Match CRU country names to ISO3 codes
+
+Check the unmatched names: if one of the paper's countries is among them, add it to `custom_match`, e.g. `c("CRU name" = "ISO")`.
+
+```{r ext-cru}
+# CRU writes names with underscores ("South_Korea") and has a few typos
+cru$iso3 <- countrycode(gsub("_", " ", cru$cru_name), "country.name", "iso3c",
+                        warn = FALSE,
+                        custom_match = c("Vanatu" = "VUT", "Puerto Rica" = "PRI",
+                                         "St Lucia" = "LCA",
+                                         "Bassas da India" = NA))   # French islet, not India
+
+# Safety check: each ISO3 code must come from exactly one CRU name
+# (otherwise an island file would be averaged with the mainland). Should be empty.
+dups <- cru |> filter(!is.na(iso3)) |> distinct(iso3, cru_name) |>
+  group_by(iso3) |> filter(n() > 1) |> arrange(iso3)
+dups
+
+unmatched <- sort(unique(cru$cru_name[is.na(cru$iso3)]))
+cat("Unmatched CRU names (", length(unmatched), "):\n", sep = ""); print(unmatched)
+
+cru_w <- cru |>
+  filter(!is.na(iso3)) |>
+  group_by(iso3, year, var) |>
+  summarise(value = mean(value, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(names_from = var, values_from = value) |>
+  transmute(iso3, year, tem = tmp, pre = pre / 100)   # pre in 100s of mm/year, as in the paper
+
+cat("Paper countries without CRU data:", setdiff(info$iso3, cru_w$iso3), "\n")
+```
+
+## 4.3 Build the new panel
+
+```{r ext-panel}
+new <- wdi |>
+  transmute(iso3, year, g = g_new) |>
+  inner_join(info,  by = "iso3") |>
+  inner_join(cru_w, by = c("iso3", "year")) |>
+  filter(year <= end_year) |>
+  mutate(region_year = paste0(region, year),
+         tem_poor = tem * poor, pre_poor = pre * poor)
+
+cat("New panel:", n_distinct(new$iso3), "countries,",
+    min(new$year), "-", max(new$year), "\n")
+```
+
+## 4.4 Do CRU and the paper's temperature agree?
+
+Within-country correlation (each country's mean removed) with the paper's area-weighted temperature, the same weighting as CRU-CY.
+
+```{r ext-compare}
+cmp <- new |>
+  select(iso3, year, tem) |>
+  inner_join(aw |> inner_join(select(info, fips60_06, iso3), by = "fips60_06") |>
+               select(iso3, year, atem),
+             by = c("iso3", "year")) |>
+  filter(!is.na(tem), !is.na(atem)) |>
+  group_by(iso3) |>
+  mutate(tem_dm = tem - mean(tem), atem_dm = atem - mean(atem)) |>
+  ungroup()
+
+cat("Within-country correlation, CRU vs paper (area-weighted):",
+    round(cor(cmp$tem_dm, cmp$atem_dm), 3), "\n")
+```
+
+## 4.5 Results: validation and extension
+
+- **(A)** Paper data, 1961–2003 (reference)
+- **(B)** New data, 1961–2003: validation
+- **(C)** New data, 1961–`r end_year`: extension
+- **(D)** As (C) without 2020–21 (COVID)
+- **(E)** New data, 2004–`r end_year` only: out-of-sample
+
+```{r ext-results}
+min_years <- function(df, k = 20) {
+  df |> group_by(iso3) |> filter(sum(!is.na(g)) >= k) |> ungroup()
+}
+
+run <- function(df, label) {
+  m <- feols(g ~ tem + tem_poor + pre + pre_poor |
+               iso3 + region^year + poor^year,
+             data = df, cluster = ~ parent + region_year)
+  pe <- poor_effect(m, "tem")
+  data.frame(sample = label, rich = unname(coef(m)["tem"]),
+             poor = pe["effect"], se_poor = pe["se"], p_poor = pe["p"],
+             N = nobs(m), countries = n_distinct(df$iso3), row.names = NULL)
+}
+
+A <- est |>
+  transmute(iso3, year, g, tem = wtem, pre = wpre, poor, region, parent,
+            region_year, tem_poor = wtem_poor, pre_poor = wpre_poor)
+
+res <- bind_rows(
+  run(A,                                             "(A) Paper data 1961-2003"),
+  run(min_years(filter(new, year <= 2003)),          "(B) New data 1961-2003"),
+  run(min_years(new),                                paste0("(C) New data 1961-", end_year)),
+  run(min_years(filter(new, !year %in% 2020:2021)),  "(D) (C) without 2020-21"),
+  run(min_years(filter(new, year >= 2004), k = 15),  paste0("(E) New data 2004-", end_year))
+)
+res |> mutate(across(c(rich, poor, se_poor, p_poor), ~ round(.x, 3)))
+```
+
+Sample (E) covers only about 20 years, so the minimum is lowered to 15 years of data per country.
+
+## 4.6 Has the effect changed over time? (adaptation)
+
+Separate temperature effects per period in one pooled regression; the Wald test checks whether the poor-country effect is equal across periods.
+
+```{r ext-adapt}
+new_p <- min_years(new) |>
+  mutate(period = cut(year, c(1960, 1979, 1999, end_year),
+                      labels = c("1961-79", "1980-99", paste0("2000-", end_year))))
+per <- levels(new_p$period)
+
+period_effects <- function(m) {
+  b <- coef(m); V <- vcov(m)
+  do.call(rbind, lapply(per, function(p) {
+    v1 <- paste0("period::", p, ":tem"); v2 <- paste0("period::", p, ":tem_poor")
+    data.frame(period = p, poor_effect = unname(b[v1] + b[v2]),
+               se = unname(sqrt(V[v1, v1] + V[v2, v2] + 2 * V[v1, v2])))
+  }))
+}
+
+m_t <- feols(g ~ i(period, tem) + i(period, tem_poor) + pre + pre_poor |
+               iso3 + region^year + poor^year,
+             data = new_p, cluster = ~ parent + region_year)
+period_effects(m_t)
+
+# H0: same poor-country effect in all periods
+b <- coef(m_t); V <- vcov(m_t)
+R <- matrix(0, length(per) - 1, length(b), dimnames = list(NULL, names(b)))
+for (k in 2:length(per)) {
+  R[k - 1, paste0("period::", per[k], ":tem")]      <-  1
+  R[k - 1, paste0("period::", per[k], ":tem_poor")] <-  1
+  R[k - 1, paste0("period::", per[1], ":tem")]      <- -1
+  R[k - 1, paste0("period::", per[1], ":tem_poor")] <- -1
+}
+dv <- R %*% b
+W  <- as.numeric(t(dv) %*% solve(R %*% V %*% t(R)) %*% dv)
+cat("Wald test: chi2(", nrow(R), ") =", round(W, 2),
+    ", p =", round(pchisq(W, nrow(R), lower.tail = FALSE), 3), "\n")
+```
+
+### Balanced panel
+
+Only countries observed in every period, so a change cannot come from countries entering later.
+
+```{r ext-balanced}
+bal_ids <- new_p |>
+  filter(!is.na(g)) |>
+  group_by(iso3) |>
+  filter(n_distinct(period) == length(per)) |>
+  pull(iso3) |> unique()
+
+m_bal <- update(m_t, data = filter(new_p, iso3 %in% bal_ids))
+period_effects(m_bal) |> mutate(countries = length(bal_ids))
+```
+
+## 4.7 Rolling 20-year windows (for the website)
+
+```{r ext-rolling}
+starts <- 1961:(end_year - 19)
+roll <- do.call(rbind, lapply(starts, function(s) {
+  r <- tryCatch(run(min_years(filter(new, year >= s, year <= s + 19), k = 15), ""),
+                error = function(e) NULL)
+  if (is.null(r)) return(NULL)
+  data.frame(window_start = s, window_end = s + 19, poor = r$poor,
+             lo = r$poor - 1.96 * r$se_poor, hi = r$poor + 1.96 * r$se_poor)
+}))
+write.csv(roll, "rolling_poor_effect.csv", row.names = FALSE)
+
+fig_roll <- ggplot(roll, aes(window_end, poor)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(x = "Last year of 20-year window",
+       y = "Effect of +1°C on growth in poor countries (pp)",
+       title = "Temperature effect on growth in poor countries, rolling 20-year windows") +
+  theme_minimal()
+fig_roll
+```
+
+# 5. Outputs for the report (Problem Set 3)
+
+Everything below is saved to the folder `output/`: LaTeX tables (for `\input{}` in the template) and PDF figures (for `\includegraphics{}`).
+
+```{r out-folder}
+dir.create("output", showWarnings = FALSE)
+```
+
+## 5.1 Section "Data": descriptive statistics (≈ paper's Table 1)
+
+The paper's Table 1 shows how much temperature still varies *after* the fixed effects are removed. This is the variation that identifies β, and it is also the key number for the measurement-error argument in section (d).
+
+```{r out-desc}
+# Standard deviation of temperature/precipitation after removing FE step by step
+resid_sd <- function(v, fe) sd(resid(feols(as.formula(paste(v, "~ 1 |", fe)), est)))
+desc_var <- data.frame(
+  variable = c("Temperature (°C)", "Precipitation (100 mm/yr)"),
+  raw            = c(sd(est$wtem), sd(est$wpre)),
+  country_FE     = c(resid_sd("wtem", "fips60_06"), resid_sd("wpre", "fips60_06")),
+  plus_year_FE   = c(resid_sd("wtem", "fips60_06 + year"), resid_sd("wpre", "fips60_06 + year")),
+  plus_region_yr = c(resid_sd("wtem", "fips60_06 + region^year + poor^year"),
+                     resid_sd("wpre", "fips60_06 + region^year + poor^year"))
+)
+desc_var |> mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+# Share of temperature variance left after all fixed effects
+cat("Share of temperature variance left after the paper's FE:",
+    round(desc_var$plus_region_yr[1]^2 / desc_var$raw[1]^2, 3), "\n")
+
+# Summary statistics by income group
+desc_grp <- est |>
+  mutate(group = ifelse(poor == 1, "Poor", "Rich")) |>
+  group_by(group) |>
+  summarise(countries = n_distinct(fips60_06), obs = n(),
+            growth_mean = mean(g), growth_sd = sd(g),
+            temp_mean = mean(wtem), temp_sd = sd(wtem),
+            precip_mean = mean(wpre), precip_sd = sd(wpre))
+desc_grp |> mutate(across(where(is.double), ~ round(.x, 2)))
+
+write.csv(desc_var, "output/desc_variation.csv", row.names = FALSE)
+write.csv(desc_grp, "output/desc_by_group.csv",  row.names = FALSE)
+```
+
+## 5.2 Section "Main result": regression table as LaTeX
+
+```{r out-table2}
+etable(m1, m2, m3, m4,
+       dict = c(g = "Annual GDP p.c. growth (pp)",
+                wtem = "Temperature", wtem_poor = "Temperature $\\times$ Poor",
+                wpre = "Precipitation", wpre_poor = "Precipitation $\\times$ Poor",
+                wtem_hot = "Temperature $\\times$ Hot", wpre_hot = "Precipitation $\\times$ Hot",
+                fips60_06 = "Country", region = "Region", poor = "Poor"),
+       digits = 3, signif.code = c("***" = .01, "**" = .05, "*" = .10),
+       extralines = list("Temp. effect, poor countries" =
+                           c("", sprintf("%.3f (%.3f)",
+                             c(poor_effect(m2, "wtem")["effect"], poor_effect(m3, "wtem")["effect"],
+                               poor_effect(m4, "wtem")["effect"]),
+                             c(poor_effect(m2, "wtem")["se"], poor_effect(m3, "wtem")["se"],
+                               poor_effect(m4, "wtem")["se"])))),
+       tex = TRUE, file = "output/table2_replication.tex", replace = TRUE)
+cat("Saved output/table2_replication.tex\n")
+```
+
+## 5.3 Section "Main result": figures
+
+**Figure A**, the replication of the paper's Figure 1: each country's temperature range (grey spike, min–max), its 1950s mean and its 1996–2005 mean, against log GDP per capita in 2000. Shows that hot countries are poor (the cross-sectional correlation the paper does *not* rely on) and that every country experiences substantial year-to-year variation (the variation it does rely on).
+
+```{r out-fig1, fig.width = 8, fig.height = 5}
+f1 <- read_dta("climate_panel.dta") |>
+  group_by(fips60_06, country_code) |>
+  summarise(lngdp2000 = log(rgdpl[year == 2000][1]),
+            tmin = min(wtem, na.rm = TRUE), tmax = max(wtem, na.rm = TRUE),
+            t50s = mean(wtem[year >= 1950 & year <= 1959], na.rm = TRUE),
+            t00s = mean(wtem[year >= 1996 & year <= 2005], na.rm = TRUE),
+            .groups = "drop") |>
+  filter(is.finite(lngdp2000), fips60_06 %in% unique(est$fips60_06))
+
+fig1 <- ggplot(f1, aes(lngdp2000)) +
+  geom_linerange(aes(ymin = tmin, ymax = tmax), colour = "grey75") +
+  geom_point(aes(y = t50s, colour = "Mean 1950-1959"), shape = 1, size = 1.8) +
+  geom_point(aes(y = t00s, colour = "Mean 1996-2005"), shape = 3, size = 1.8) +
+  scale_colour_manual(values = c("Mean 1950-1959" = "blue", "Mean 1996-2005" = "red"), name = NULL) +
+  labs(x = "Log GDP per capita in 2000 (PPP)", y = "Temperature (°C, population-weighted)",
+       title = "Temperature levels and variation by income") +
+  theme_minimal() + theme(legend.position = "bottom")
+fig1
+ggsave("output/fig1_temperature_income.pdf", fig1, width = 8, height = 5)
+```
+
+**Figure B**, the main result: effect in poor vs. rich countries (from section 2.4).
+
+```{r out-fig2}
+fig2 <- ggplot(fig, aes(group, est)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), size = 0.8) +
+  labs(x = NULL, y = "Effect of +1°C on annual growth (pp)") +
+  theme_minimal()
+ggsave("output/fig2_poor_rich.pdf", fig2, width = 6, height = 4)
+```
+
+## 5.4 Section "Critical evaluation": supporting numbers
+
+### (a) Measurement error: correcting attenuation with IV
+
+With two independent noisy measures of the same true temperature, one can instrument one with the other (Topic 2b + 2c): if the errors are classical and independent, IV removes the attenuation bias. Here the paper's temperature (Matsuura & Willmott) is instrumented with CRU temperature, 1961–2003.
+
+Caveat for the report: both datasets are built from largely the same weather stations, so their errors are probably *correlated*. Then IV only partly removes the bias, i.e. the IV estimate is a lower bound (in absolute value) for the error-corrected effect.
+
+```{r out-iv}
+cru_iso <- cru_w |> select(iso3, year, tem_cru = tem, pre_cru = pre)
+iv_dat <- est |>
+  left_join(cru_iso, by = c("iso3", "year")) |>
+  filter(!is.na(tem_cru)) |>
+  mutate(tem_cru_poor = tem_cru * poor)
+
+m_ols_iv_sample <- feols(g ~ wtem + wtem_poor | fips60_06 + region^year + poor^year,
+                         iv_dat, cluster = cl)
+m_iv <- feols(g ~ 1 | fips60_06 + region^year + poor^year |
+                wtem + wtem_poor ~ tem_cru + tem_cru_poor,
+              iv_dat, cluster = cl)
+
+round(rbind("OLS (same sample)"                     = poor_effect(m_ols_iv_sample, "wtem"),
+            "IV: paper temp. instrumented by CRU"   = poor_effect(m_iv, "fit_wtem")), 3)
+
+# First stage strength (should be far above 10)
+fitstat(m_iv, "ivwald")
+```
+
+### (b) Growth or level effect? Lagged temperature (≈ paper's Table 3)
+
+If a hot year only lowers the *level* of output (e.g. a bad harvest), growth recovers afterwards and the sum of current and lagged effects goes back towards zero. If the cumulative effect stays negative, temperature affects the *growth rate*. The paper argues for the latter.
+
+```{r out-lags}
+est <- est |>
+  arrange(fips60_06, year) |>
+  group_by(fips60_06) |>
+  # lag k of temperature, only if the year k years earlier is in the data (no gaps)
+  mutate(L1_wtem = ifelse(lag(year, 1) == year - 1, lag(wtem, 1), NA),
+         L2_wtem = ifelse(lag(year, 2) == year - 2, lag(wtem, 2), NA),
+         L3_wtem = ifelse(lag(year, 3) == year - 3, lag(wtem, 3), NA),
+         L4_wtem = ifelse(lag(year, 4) == year - 4, lag(wtem, 4), NA),
+         L5_wtem = ifelse(lag(year, 5) == year - 5, lag(wtem, 5), NA)) |>
+  ungroup() |>
+  mutate(across(L1_wtem:L5_wtem, ~ .x * poor, .names = "{.col}_poor"))
+
+cum_poor <- function(nl) {
+  v  <- c("wtem", if (nl > 0) paste0("L", 1:nl, "_wtem"))
+  vp <- paste0(v, "_poor")
+  m  <- feols(as.formula(paste("g ~", paste(c(v, vp), collapse = " + "),
+                               "| fips60_06 + region^year + poor^year")), est, cluster = cl)
+  a  <- setNames(rep(0, length(coef(m))), names(coef(m))); a[c(v, vp)] <- 1
+  e  <- sum(a * coef(m)); se <- sqrt(as.numeric(t(a) %*% vcov(m) %*% a))
+  data.frame(lags = nl, cumulative_poor = e, se = se, p = 2 * pnorm(-abs(e / se)), N = nobs(m))
+}
+lag_tab <- do.call(rbind, lapply(c(0, 1, 3, 5), cum_poor))
+lag_tab |> mutate(across(c(cumulative_poor, se, p), ~ round(.x, 3)))
+write.csv(lag_tab, "output/lags_cumulative.csv", row.names = FALSE)
+```
+
+### (c) Inference: how sensitive are the standard errors to the clustering choice?
+
+Weather is spatially correlated, so errors of neighbouring countries in the same year are likely correlated. The table shows the poor-country effect from column 3 with different standard errors.
+
+```{r out-se}
+se_tab <- do.call(rbind, lapply(list(
+  "Heteroskedasticity-robust only"          = "hetero",
+  "Clustered by country"                    = ~ fips60_06,
+  "Clustered by region × year"              = ~ region_year,
+  "Two-way: parent & region × year (paper)" = ~ parent + region_year,
+  "Two-way: country & year"                 = ~ fips60_06 + year
+), function(v) {
+  pe <- poor_effect(summary(m3, vcov = v), "wtem")
+  data.frame(effect = pe["effect"], se = pe["se"], p = pe["p"])
+}))
+se_tab |> mutate(across(everything(), ~ round(.x, 3)))
+write.csv(se_tab, "output/se_clustering.csv")
+```
+
+## 5.5 Section "Extension": tables and figures
+
+```{r out-extension}
+write.csv(res, "output/extension_results.csv", row.names = FALSE)
+
+sens <- data.frame(
+  specification = c("Paper (pop-weighted temp, 2011 WDI)", "Area-weighted temp, 2011 WDI",
+                    "Pop-weighted temp, current WDI", "CRU temp + current WDI (B)"),
+  effect = c(poor_effect(m3, "wtem")["effect"], poor_effect(m_aw, "atem")["effect"],
+             poor_effect(m_wdi, "wtem")["effect"], res$poor[2]),
+  se     = c(poor_effect(m3, "wtem")["se"], poor_effect(m_aw, "atem")["se"],
+             poor_effect(m_wdi, "wtem")["se"], res$se_poor[2]))
+write.csv(sens, "output/sensitivity.csv", row.names = FALSE)
+
+fig3 <- ggplot(sens, aes(reorder(specification, -effect), effect)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = effect - 1.96 * se, ymax = effect + 1.96 * se)) +
+  coord_flip() +
+  labs(x = NULL, y = "Effect of +1°C on growth in poor countries (pp), 1961-2003") +
+  theme_minimal()
+fig3
+ggsave("output/fig3_sensitivity.pdf", fig3, width = 8, height = 3.5)
+
+adapt_tab <- period_effects(m_t)
+fig4 <- ggplot(adapt_tab, aes(period, poor_effect)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = poor_effect - 1.96 * se, ymax = poor_effect + 1.96 * se)) +
+  labs(x = NULL, y = "Effect of +1°C on growth in poor countries (pp)",
+       subtitle = "New data (CRU-CY, current WDI), one pooled regression") +
+  theme_minimal()
+fig4
+ggsave("output/fig4_periods.pdf", fig4, width = 6, height = 4)
+
+ggsave("output/fig5_rolling.pdf", fig_roll, width = 8, height = 4)
+list.files("output")
+```

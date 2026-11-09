@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hot Years, Slow Growth</title>
+<meta name="description" content="Do unusually hot years slow down economic growth? An interactive replication and extension of Dell, Jones and Olken (2012).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    /* University of Zurich palette: UZH Blue #0028A5 as the main colour */
+    /* Always light: white page, panels in a very light UZH-blue tint */
+    --bg: #FFFFFF; --surface: #F5F7FC; --ink: #0B1640; --muted: #4F5A7A; --line: #D6DCEC;
+    --uzh: #0028A5; --rich: #0028A5; --poor: #E3622C; --accent: #4AC9E3; --grid: rgba(11,22,64,.08);
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--serif);
+         font-size: 1.125rem; line-height: 1.65; }
+  main { max-width: none; margin: 0; padding: 3rem clamp(1rem, 5vw, 5rem) 5rem; }
+  h1, h2, h3 { font-weight: 500; line-height: 1.2; text-wrap: balance; }
+  h1 { font-size: clamp(2.1rem, 6vw, 3.1rem); margin: .3rem 0 1rem; }
+  h2 { font-size: 1.7rem; margin: 3.5rem 0 .8rem; }
+  h3 { font-size: 1.2rem; margin: 1.8rem 0 .5rem; }
+  p { margin: 0 0 1rem; }
+  .kicker, .label, button, select, table, .note, figcaption, .stat small, summary {
+    font-family: var(--sans); }
+  .affil { font-family: var(--sans); font-size: .9rem; font-weight: 600; color: var(--uzh);
+           display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .25rem .55rem;
+           margin: 0 0 1.4rem; padding-bottom: .9rem; border-bottom: 1px solid var(--line); }
+  .affil .course { grid-column: 2; color: var(--muted); font-weight: 500; }
+  .uzh-mark { width: .9rem; height: .9rem; background: var(--uzh); display: inline-block; border-radius: 2px; }
+  .kicker { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .lede { font-size: 1.3rem; color: var(--muted); }
+  .note { font-size: .85rem; color: var(--muted); line-height: 1.5; }
+  .poor { color: var(--poor); font-weight: 600; } .rich { color: var(--rich); font-weight: 600; }
+
+  .summary { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--uzh);
+             border-radius: 6px; padding: 1.4rem 1.5rem; margin: 2rem 0; }
+  .summary h2 { margin: 0 0 .8rem; font-size: 1.3rem; }
+  .summary ul { margin: 0; padding-left: 1.2rem; } .summary li { margin-bottom: .55rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .8rem; margin: 1.5rem 0; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: .9rem 1rem; }
+  .stat b { display: block; font-size: 1.8rem; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat small { display: block; margin-top: .3rem; font-size: .8rem; line-height: 1.4; color: var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1.1rem 1.1rem .8rem; margin: 1.2rem 0 1.6rem; }
+  .controls { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .9rem; }
+  .controls .label { font-size: .8rem; color: var(--muted); margin-right: .2rem; }
+  button.tog { font-size: .82rem; padding: .38rem .75rem; border-radius: 999px; border: 1px solid var(--line);
+               background: transparent; color: var(--ink); cursor: pointer; }
+  button.tog[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  button.tog:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select { font-size: .9rem; padding: .35rem .5rem; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--ink); max-width: 100%; }
+  .chart { position: relative; height: 420px; }
+  .chart.tall { height: 500px; }
+  figcaption { font-size: .82rem; color: var(--muted); margin-top: .6rem; line-height: 1.5; }
+  .readout { font-family: var(--sans); font-size: .92rem; margin: .2rem 0 .8rem; min-height: 1.4em; }
+
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  th, td { padding: .45rem .6rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; }
+  thead th { font-weight: 600; border-bottom: 2px solid var(--ink); white-space: normal; vertical-align: bottom; min-width: 6.5rem; }
+  td:first-child { min-width: 9rem; }
+  td .se { display: block; color: var(--muted); font-size: .8rem; }
+  tr.key td { background: color-mix(in srgb, var(--poor) 12%, transparent); font-weight: 600; }
+  td.dim, th.dim { opacity: .3; }
+
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin: 1rem 0; padding: 0 1.1rem; }
+  details[open] { padding-bottom: 1rem; }
+  summary { cursor: pointer; padding: 1rem 0; font-weight: 500; font-size: .95rem; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+ "; color: var(--accent); font-weight: 600; }
+  details[open] summary::before { content: "− "; }
+  .q { font-family: var(--serif); font-size: 1.05rem; }
+  .q .lvl { font-family: var(--sans); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); display: block; }
+  .ans { border-top: 1px dashed var(--line); padding-top: .8rem; }
+  footer { border-top: 1px solid var(--line); margin-top: 4rem; padding-top: 1.2rem; }
+  a { color: var(--uzh); }
+  @media (max-width: 560px) { .chart { height: 300px; } .chart.tall { height: 360px; } body { font-size: 1.06rem; } }
+</style>
+</head>
+<body>
+<main>
+
+<div class="affil">
+  <span class="uzh-mark" aria-hidden="true"></span>
+  <span>University of Zurich · Department of Economics</span>
+  <span class="course">Empirical Methods (22MO0010) · HS 2026 · Prof. Gregory S. Crawford · Problem Set 4</span>
+</div>
+<p class="kicker">Student project · Replication &amp; extension of Dell, Jones &amp; Olken (2012)</p>
+<h1>Does a hot year make a country poorer?</h1>
+<p class="lede">Hot countries tend to be poor. But is that because of the heat, or because of everything else that differs between, say, Niger and Norway? This page follows one influential answer and checks whether it still holds with newer data.</p>
+
+<section class="summary" aria-labelledby="sum-h">
+  <h2 id="sum-h">The paper in 60 seconds</h2>
+  <ul>
+    <li><strong>Question.</strong> Do higher temperatures slow down economic growth, and does that depend on how rich a country is?</li>
+    <li><strong>Trick.</strong> Instead of comparing hot countries with cold ones, the authors compare <em>each country with itself</em>: was growth lower in years that were hotter than that country's normal?</li>
+    <li><strong>Finding.</strong> In <span class="poor">poor countries</span>, a year 1&nbsp;°C warmer than usual cut growth by about <strong>1.3 percentage points</strong>. That is a lot when typical growth is about 1&nbsp;% a year. In <span class="rich">rich countries</span> there was no clear effect.</li>
+    <li><strong>Our check.</strong> With the authors' own data we get the same result. With newer temperature and GDP data the effect in poor countries is <strong>about half as large</strong> and less certain. Whether it has faded since 2003 is unclear.</li>
+  </ul>
+</section>
+
+<div class="stats" id="stats"></div>
+
+<!-- 1. Cross-section -->
+<h2>Hot countries are poorer, but that alone proves little</h2>
+<p>Each dot is a country. Further right means richer, higher up means hotter. The pattern is clear: the hottest countries are mostly poor. But hot countries also differ in history, institutions, disease and geography, so this picture alone cannot tell us what heat itself does.</p>
+<figure class="panel">
+  <div class="controls" role="group" aria-label="Which temperature to show">
+    <span class="label">Show</span>
+    <button class="tog" data-f1="t50" aria-pressed="true">Average 1950s</button>
+    <button class="tog" data-f1="t00" aria-pressed="false">Average 1996–2005</button>
+    <button class="tog" data-f1="range" aria-pressed="false">Coldest to hottest year</button>
+  </div>
+  <div class="chart tall"><canvas id="c-f1" aria-label="Scatter plot of temperature against GDP per capita"></canvas></div>
+  <figcaption>Replication of the paper's Figure 1. GDP per capita in 2000 (purchasing-power adjusted, log scale). Temperature is weighted by where people live. <span class="poor">Orange</span>: countries classified as poor in the paper (below-median income at the start of the sample). <span class="rich">Blue</span>: rich.</figcaption>
+</figure>
+<p>The grey bars in the last view show how far temperature swings within one country from year to year. That year-to-year swing is what the paper uses.</p>
+
+<!-- 2. Within country -->
+<h2>Follow one country through hot and cool years</h2>
+<p>The authors use each country as its own comparison. Pick a country. The bars show how much warmer (above zero) or cooler (below zero) each year was than that country's long-run average. The line shows how fast the economy grew that year.</p>
+<p>Don't be surprised if a single country shows the opposite of the main result. Over six decades most countries got warmer <em>and</em> their growth changed for many other reasons (wars, reforms, commodity booms). In one country these long-run trends can swamp the effect of a hot year. That is why the paper pools all countries and compares each year only with other countries in the same region in that same year.</p>
+<figure class="panel">
+  <div class="controls">
+    <label class="label" for="ctry">Country</label>
+    <select id="ctry"></select>
+  </div>
+  <p class="readout" id="ctry-readout"></p>
+  <div class="chart"><canvas id="c-ctry" aria-label="Yearly temperature deviation and GDP growth for the selected country"></canvas></div>
+  <figcaption>Data: CRU-CY v4.10 temperature (area average) and World Bank GDP per capita growth (constant local currency), 1961–2024. A single country is noisy. The paper's estimate pools all 126 countries and also removes shocks common to a region in a given year.</figcaption>
+</figure>
+
+<!-- 3. Main result -->
+<h2>The main result: hot years hurt poor countries</h2>
+<p>Pooling every country and year, the chart shows how much one year that is 1&nbsp;°C hotter than normal changes growth, separately for rich and poor countries. The bar is the 95&nbsp;% confidence interval: if it crosses zero, we cannot rule out "no effect". Switch between the original data and our updated data.</p>
+<figure class="panel">
+  <div class="controls" role="group" aria-label="Which data and years">
+    <span class="label">Data</span>
+    <span id="sample-btns" style="display:contents"></span>
+  </div>
+  <p class="readout" id="main-readout"></p>
+  <div class="chart"><canvas id="c-main" aria-label="Effect of a 1 degree hotter year on growth for rich and poor countries"></canvas></div>
+  <figcaption>Panel regression of annual GDP-per-capita growth on temperature and precipitation, with country fixed effects, region-by-year and poor-by-year fixed effects. Standard errors are clustered two ways, by country and by region-year. "New data" uses CRU-CY temperature and current World Bank GDP, with the paper's rich/poor split and regions kept fixed.</figcaption>
+</figure>
+
+<h3>The regression table</h3>
+<p>Our replication of the paper's Table 2. Each column adds something. Click a column to focus on it, and choose how the uncertainty is shown.</p>
+<div class="panel">
+  <div class="controls" role="group" aria-label="Table options">
+    <span class="label">Focus</span>
+    <span id="col-btns" style="display:contents"></span>
+    <span class="label" style="margin-left:.6rem">Below each number</span>
+    <select id="unc">
+      <option value="se">standard error</option>
+      <option value="p">p-value</option>
+      <option value="none">nothing</option>
+    </select>
+  </div>
+  <div class="tablewrap"><table id="t2"></table></div>
+  <p class="note" style="margin-top:.7rem">Dependent variable: annual growth of GDP per capita in percentage points. Temperature in °C, precipitation in 100&nbsp;mm per year. "× Poor" and "× Hot" give the <em>extra</em> effect in poor or hot countries, so the total effect in poor countries is the sum of two rows (highlighted). Stars: *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.10. 1961–2003, 126 countries, 4,909 country-years.</p>
+</div>
+
+<!-- 4. Data matters -->
+<h2>Change the data, and the effect shrinks</h2>
+<p>We kept the method fixed and swapped one ingredient at a time, still for 1961–2003. Each swap pulls the estimate towards zero. All four still point the same way. With area-weighted temperature the effect stays clearly negative, but once the newer GDP data come in, the confidence interval reaches zero.</p>
+<figure class="panel">
+  <div class="chart" style="height:260px"><canvas id="c-sens" aria-label="Effect in poor countries under different data choices"></canvas></div>
+  <figcaption>Effect of a 1&nbsp;°C hotter year on growth in poor countries, with 95&nbsp;% confidence intervals. "Area-weighted" averages temperature over a country's land area instead of where people live. "Current WDI" is today's version of the World Bank GDP series, which has been revised since 2011.</figcaption>
+</figure>
+
+<!-- 5. Over time -->
+<h2>Have poor countries adapted since then?</h2>
+<p>If air conditioning, better seeds or a shift away from farming made economies less sensitive to heat, the effect should shrink over time. Drag the slider to move a 20-year window through history.</p>
+<figure class="panel">
+  <div class="controls">
+    <label class="label" for="win">Window ending in</label>
+    <input type="range" id="win" min="0" max="0" value="0" style="flex:1;min-width:10rem" aria-describedby="win-out">
+    <output id="win-out" class="label" style="color:var(--ink);font-size:.9rem"></output>
+  </div>
+  <p class="readout" id="roll-readout"></p>
+  <div class="chart"><canvas id="c-roll" aria-label="Rolling 20-year estimate of the effect in poor countries"></canvas></div>
+  <figcaption>Each point is a separate estimate using only the 20 years that end in that year (new data). The shaded band is the 95&nbsp;% confidence interval. The windows overlap, so neighbouring points are not independent.</figcaption>
+</figure>
+<p id="period-text"></p>
+
+<!-- 6. Exam questions -->
+<h2>Test yourself: three exam-style questions</h2>
+<p>From easy to hard. Try to answer each one before opening the solution.</p>
+
+<details>
+  <summary><span class="q"><span class="lvl">Question 1 · warm-up</span>Why don't the authors simply regress growth on each country's average temperature across countries?</span></summary>
+  <div class="ans">
+    <p>That comparison suffers from <strong>omitted variable bias</strong>. Things like institutions, colonial history, disease burden or distance to markets affect growth and are correlated with climate. Write the true model as <em>y = βT + γW + ε</em>, where <em>W</em> is, for example, institutional quality. Then the cross-country estimate converges to β + γ·δ, where δ is the slope from regressing <em>W</em> on <em>T</em>. Better institutions raise growth (γ&nbsp;&gt;&nbsp;0) and are less common in hot places (δ&nbsp;&lt;&nbsp;0). So the bias is <strong>negative</strong>, and a cross-country regression would overstate how harmful heat is.</p>
+    <p><strong>Country fixed effects</strong> remove anything about a country that does not change over time, including its average climate. The remaining variation is year-to-year deviation from each country's own normal. Weather in a given year is plausibly random, so it is unlikely to be correlated with the omitted factors.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="q"><span class="lvl">Question 2 · intermediate</span>After removing all the fixed effects, the standard deviation of temperature falls from about 7&nbsp;°C to under 0.4&nbsp;°C. Why does this make measurement error a bigger worry? We instrument the paper's temperature with an independent dataset (CRU). What does the result tell us?</span></summary>
+  <div class="ans">
+    <p>With classical measurement error, OLS is biased towards zero by the factor Var(T*)&nbsp;/&nbsp;(Var(T*)&nbsp;+&nbsp;Var(e)). Fixed effects remove most of the true signal Var(T*), but the station and interpolation noise Var(e) mostly stays. So the noise <em>share</em> rises, and so does the attenuation.</p>
+    <p>If two datasets measure the same true temperature with independent errors, instrumenting one with the other removes this bias. On the same sample the poor-country effect is <span data-fill="iv-ols"></span> with OLS and <span data-fill="iv-iv"></span> with IV. The first stage is very strong. The IV estimate is not larger in absolute value, so attenuation from measurement error does not seem to be a big problem. One caveat: both datasets are built from largely the same weather stations, so their errors are probably <em>correlated</em>. In that case IV only partly removes the bias.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="q"><span class="lvl">Question 3 · hard</span>With newer temperature and GDP data for the <em>same</em> years (1961–2003), the poor-country effect falls from about −1.35 to about −0.6 and is no longer significant. Does this show that the original result was wrong? Discuss which kind of data error could cause each change.</span></summary>
+  <div class="ans">
+    <p>Not necessarily. Think about where the error enters.</p>
+    <ul>
+      <li><strong>Error in growth (the outcome).</strong> If GDP revisions are pure noise, they make estimates less precise but do not bias β. They only cause bias if the revisions are correlated with temperature shocks. For example, statistical offices in poor, agricultural economies might first record a hot-year harvest failure and then revise it away. In that case one of the two vintages is biased, and we cannot tell which from these data alone.</li>
+      <li><strong>Error in temperature (the regressor).</strong> Different temperature products would attenuate the estimate (Question 2), but the IV check suggests this effect is small. Weighting matters more. Population-weighted temperature measures heat <em>where people work</em>, while area weighting gives deserts and mountains equal weight. A smaller effect with area weighting is what we would expect if heat hurts through people and farms. This is a reason to prefer the paper's weighting, not evidence against it.</li>
+      <li><strong>Sampling uncertainty.</strong> The confidence intervals of the original and new estimates overlap. The difference itself may not be statistically significant.</li>
+    </ul>
+    <p>A fair conclusion: the direction of the effect is robust, but its <em>size</em> depends on data choices. Policy numbers based on "−1.3 pp per degree" should be treated as an upper estimate.</p>
+  </div>
+</details>
+
+<footer>
+  <p class="note"><strong>Source paper:</strong> Dell, M., Jones, B. F., &amp; Olken, B. A. (2012). Temperature Shocks and Economic Growth: Evidence from the Last Half Century. <em>American Economic Journal: Macroeconomics</em>, 4(3), 66–95. Replication package: openICPSR 114251.</p>
+  <p class="note"><strong>Extension data:</strong> Harris et al. (2020), CRU TS / CRU-CY v4.10 country temperature and precipitation; World Bank World Development Indicators, GDP per capita (constant LCU, NY.GDP.PCAP.KN).</p>
+  <p class="note">All estimates are our own, computed in R (fixest). The analysis code is in <a href="analysis/">analysis/</a>. A student project for the course Empirical Methods (22MO0010, HS 2026, Prof. Gregory S. Crawford), Problem Set 4, at the Department of Economics, University of Zurich. This is not an official publication of the university.</p>
+</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script>
+(function () {
+  const D = window.DJO;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = () => ({ rich: css('--rich'), poor: css('--poor'), ink: css('--ink'), muted: css('--muted'),
+                     line: css('--line'), grid: css('--grid'), accent: css('--accent') });
+  const fmt = (x, d = 2) => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(d);
+  const stars = p => p < .01 ? '***' : p < .05 ? '**' : p < .1 ? '*' : '';
+  const sans = '"Public Sans", system-ui, sans-serif';
+  Chart.defaults.font.family = sans;
+  Chart.defaults.font.size = 12;
+  Chart.defaults.maintainAspectRatio = false;
+  const charts = [];
+  function themeChart(ch) {
+    const c = C();
+    Chart.defaults.color = c.muted;
+    Object.values(ch.options.scales || {}).forEach(s => {
+      s.grid = Object.assign(s.grid || {}, { color: c.grid });
+      s.ticks = Object.assign(s.ticks || {}, { color: c.muted });
+      if (s.title) s.title.color = c.muted;
+      s.border = { color: c.line };
+    });
+  }
+  // Draws error bars [lo, hi] for datasets that carry an `err` array
+  const errBars = {
+    id: 'errBars',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      chart.data.datasets.forEach((ds, i) => {
+        if (!ds.err || !chart.isDatasetVisible(i)) return;
+        const meta = chart.getDatasetMeta(i);
+        const horiz = chart.options.indexAxis === 'y';
+        const vs = chart.scales[horiz ? 'x' : 'y'];
+        ctx.save(); ctx.lineWidth = ds.errWidth || 2;
+        meta.data.forEach((pt, j) => {
+          const e = ds.err[j]; if (!e) return;
+          ctx.strokeStyle = Array.isArray(ds.errColor) ? ds.errColor[j] : (ds.errColor || ds.borderColor);
+          const a = vs.getPixelForValue(e[0]), b = vs.getPixelForValue(e[1]), cap = 6;
+          ctx.beginPath();
+          if (horiz) { ctx.moveTo(a, pt.y); ctx.lineTo(b, pt.y);
+            ctx.moveTo(a, pt.y - cap); ctx.lineTo(a, pt.y + cap); ctx.moveTo(b, pt.y - cap); ctx.lineTo(b, pt.y + cap); }
+          else { ctx.moveTo(pt.x, a); ctx.lineTo(pt.x, b);
+            ctx.moveTo(pt.x - cap, a); ctx.lineTo(pt.x + cap, a); ctx.moveTo(pt.x - cap, b); ctx.lineTo(pt.x + cap, b); }
+          ctx.stroke();
+        });
+        ctx.restore();
+      });
+    }
+  };
+  // Dashed zero line
+  const zeroLine = {
+    id: 'zeroLine',
+    beforeDatasetsDraw(chart, args, opts) {
+      if (!opts || !opts.axis) return;
+      const s = chart.scales[opts.axis], { ctx, chartArea: a } = chart;
+      const v = s.getPixelForValue(0);
+      ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = C().muted; ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (opts.axis === 'x') { ctx.moveTo(v, a.top); ctx.lineTo(v, a.bottom); }
+      else { ctx.moveTo(a.left, v); ctx.lineTo(a.right, v); }
+      ctx.stroke(); ctx.restore();
+    }
+  };
+  Chart.register(errBars, zeroLine);
+  function make(id, cfg) { const ch = new Chart(document.getElementById(id), cfg); themeChart(ch); ch.update('none'); charts.push(ch); return ch; }
+
+  // ---------- Stat tiles ----------
+  const A = D.samples[0], B = D.samples[1], Cs = D.samples[2];
+  const poorDesc = D.desc.find(d => d.group === 'Poor');
+  document.getElementById('stats').innerHTML = [
+    [fmt(A.poor) + ' pp', 'growth effect of +1 °C in poor countries, original data'],
+    [fmt(Cs.poor) + ' pp', 'same effect with new data, 1961–2024'],
+    [poorDesc.growth_mean.toFixed(1) + ' %', 'average yearly growth of poor countries, 1961–2003'],
+    ['126', 'countries, followed for up to 64 years']
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><small>${s}</small></div>`).join('');
+
+  // ---------- 1. Scatter ----------
+  const f1 = D.fig1;
+  const ptsFor = (key, poor) => f1.filter(d => d.poor === poor && d[key] != null)
+                                   .map(d => ({ x: d.gdp, y: d[key], name: d.name, d }));
+  const rangePlugin = {
+    id: 'ranges',
+    beforeDatasetsDraw(chart) {
+      if (chart.$mode !== 'range') return;
+      const { ctx, scales: { x, y } } = chart;
+      ctx.save(); ctx.strokeStyle = C().line; ctx.lineWidth = 2;
+      f1.forEach(d => { const px = x.getPixelForValue(d.gdp);
+        ctx.beginPath(); ctx.moveTo(px, y.getPixelForValue(d.tmin)); ctx.lineTo(px, y.getPixelForValue(d.tmax)); ctx.stroke(); });
+      ctx.restore();
+    }
+  };
+  const c0 = C();
+  const f1chart = make('c-f1', {
+    type: 'scatter',
+    data: { datasets: [
+      { label: 'Poor', data: ptsFor('t50', 1), backgroundColor: c0.poor, borderColor: c0.poor, pointRadius: 4, pointHoverRadius: 6 },
+      { label: 'Rich', data: ptsFor('t50', 0), backgroundColor: c0.rich, borderColor: c0.rich, pointRadius: 4, pointHoverRadius: 6 }
+    ]},
+    plugins: [rangePlugin],
+    options: {
+      animation: { duration: 400 },
+      scales: {
+        x: { title: { display: true, text: 'GDP per capita in 2000 (log scale)' },
+             ticks: { callback: v => '$' + Math.round(Math.exp(v)).toLocaleString('en-US'), maxTicksLimit: 7 } },
+        y: { title: { display: true, text: 'Temperature (°C)' } }
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true } },
+        tooltip: { callbacks: { label: ctx => {
+          const d = ctx.raw.d;
+          return `${d.name}: ${ctx.raw.y.toFixed(1)} °C, $${Math.round(Math.exp(d.gdp)).toLocaleString('en-US')} (range ${d.tmin.toFixed(1)}–${d.tmax.toFixed(1)} °C)`;
+        } } }
+      }
+    }
+  });
+  document.querySelectorAll('[data-f1]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-f1]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    const mode = b.dataset.f1, key = mode === 'range' ? 't00' : mode;
+    f1chart.$mode = mode;
+    f1chart.data.datasets[0].data = ptsFor(key, 1);
+    f1chart.data.datasets[1].data = ptsFor(key, 0);
+    f1chart.update();
+  }));
+
+  // ---------- 2. Country explorer ----------
+  const sel = document.getElementById('ctry');
+  [['Poor countries', 1], ['Rich countries', 0]].forEach(([lab, p]) => {
+    const g = document.createElement('optgroup'); g.label = lab;
+    D.countries.filter(c => c.poor === p).forEach(c => {
+      const o = document.createElement('option'); o.value = c.iso3; o.textContent = c.name; g.appendChild(o);
+    });
+    sel.appendChild(g);
+  });
+  sel.value = D.series.GHA ? 'GHA' : D.countries.find(c => c.poor).iso3;
+  const ctryChart = make('c-ctry', {
+    data: { labels: [], datasets: [
+      { type: 'bar', label: 'Temperature vs. normal (°C)', data: [], yAxisID: 'yT', backgroundColor: [], order: 2 },
+      { type: 'line', label: 'GDP per capita growth (%)', data: [], yAxisID: 'yG', borderColor: c0.ink, borderWidth: 1.6,
+        pointRadius: 0, pointHoverRadius: 4, tension: .15, order: 1 }
+    ]},
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { maxTicksLimit: 9 } },
+        yT: { position: 'left', title: { display: true, text: 'Temperature vs. normal (°C)' }, suggestedMin: -1.5, suggestedMax: 1.5 },
+        yG: { position: 'right', title: { display: true, text: 'Growth (%)' }, grid: { drawOnChartArea: false } }
+      },
+      plugins: { legend: { position: 'bottom' }, zeroLine: { axis: 'yT' },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === 'yT'
+          ? `Temperature: ${fmt(ctx.raw)} °C vs. normal` : `Growth: ${ctx.raw.toFixed(1)} %` } } }
+    }
+  });
+  function corr(a, b) {
+    const n = a.length, ma = a.reduce((s, v) => s + v, 0) / n, mb = b.reduce((s, v) => s + v, 0) / n;
+    let sab = 0, sa = 0, sb = 0;
+    for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); sa += (a[i] - ma) ** 2; sb += (b[i] - mb) ** 2; }
+    return sab / Math.sqrt(sa * sb);
+  }
+  function showCountry() {
+    const s = D.series[sel.value], c = C(), info = D.countries.find(x => x.iso3 === sel.value);
+    ctryChart.data.labels = s.y;
+    ctryChart.data.datasets[0].data = s.dt;
+    ctryChart.data.datasets[1].data = s.g;
+    ctryChart.data.datasets[0].backgroundColor = s.dt.map(v => v >= 0 ? c.poor : c.rich);
+    ctryChart.data.datasets[1].borderColor = c.ink;
+    ctryChart.update();
+    const hot = [], cool = [];
+    s.dt.forEach((v, i) => (v > 0 ? hot : cool).push(s.g[i]));
+    const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+    document.getElementById('ctry-readout').innerHTML =
+      `<strong>${info.name}</strong> (${info.poor ? 'poor' : 'rich'} in the paper): average growth was <strong>${avg(hot).toFixed(1)} %</strong> in warmer-than-normal years and <strong>${avg(cool).toFixed(1)} %</strong> in cooler years. Correlation: ${corr(s.dt, s.g).toFixed(2)}.`;
+  }
+  sel.addEventListener('change', showCountry); showCountry();
+
+  // ---------- 3. Main result ----------
+  const sampleLabels = ['Original data, 1961–2003', 'New data, 1961–2003', 'New data, 1961–2024', 'New data, without 2020–21', 'New data, 2004–2024 only'];
+  const sbox = document.getElementById('sample-btns');
+  D.samples.forEach((s, i) => {
+    const b = document.createElement('button'); b.className = 'tog'; b.textContent = sampleLabels[i];
+    b.setAttribute('aria-pressed', i === 0); b.dataset.i = i; sbox.appendChild(b);
+  });
+  const ci = (b, se) => [b - 1.96 * se, b + 1.96 * se];
+  const mainChart = make('c-main', {
+    type: 'bar',
+    data: { labels: ['Rich countries', 'Poor countries'], datasets: [{
+      label: 'Effect of +1 °C on growth', data: [], backgroundColor: [], borderRadius: 3, maxBarThickness: 90,
+      err: [], errColor: c0.ink, errWidth: 2 }] },
+    options: {
+      animation: { duration: 450 },
+      scales: { y: { min: -2.6, max: 1.4, title: { display: true, text: 'Change in growth (percentage points)' } } },
+      plugins: { legend: { display: false }, zeroLine: { axis: 'y' },
+        tooltip: { callbacks: { label: ctx => {
+          const e = ctx.dataset.err[ctx.dataIndex];
+          return `${fmt(ctx.raw)} pp (95% CI ${e[0].toFixed(2)} to ${e[1].toFixed(2)})`; } } } }
+    }
+  });
+  function showSample(i) {
+    const s = D.samples[i], c = C();
+    const ds = mainChart.data.datasets[0];
+    ds.data = [s.rich, s.poor];
+    ds.err = [ci(s.rich, s.se_rich), ci(s.poor, s.se_poor)];
+    ds.backgroundColor = [c.rich, c.poor]; ds.errColor = c.ink;
+    mainChart.update();
+    const sig = s.p_poor < .05 ? 'clearly different from zero' : s.p_poor < .1 ? 'only weakly different from zero' : 'not distinguishable from zero';
+    document.getElementById('main-readout').innerHTML =
+      `In poor countries, a 1 °C hotter year changes growth by <span class="poor">${fmt(s.poor)} pp</span> (p = ${s.p_poor.toFixed(3)}, ${sig}). In rich countries: <span class="rich">${fmt(s.rich)} pp</span> (p = ${s.p_rich.toFixed(2)}). ${s.N.toLocaleString('en-US')} country-years.`;
+  }
+  sbox.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    sbox.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    showSample(+b.dataset.i);
+  });
+  showSample(0);
+
+  // ---------- Table 2 ----------
+  const rows = [
+    ['wtem', 'Temperature'], ['wtem_poor', 'Temperature × Poor'], ['wpre', 'Precipitation'],
+    ['wpre_poor', 'Precipitation × Poor'], ['wtem_hot', 'Temperature × Hot'], ['wpre_hot', 'Precipitation × Hot']
+  ];
+  const cbox = document.getElementById('col-btns');
+  let focus = 3;
+  ['All', '(1)', '(2)', '(3)', '(4)'].forEach((t, i) => {
+    const b = document.createElement('button'); b.className = 'tog'; b.textContent = t; b.dataset.c = i;
+    b.setAttribute('aria-pressed', i === focus); cbox.appendChild(b);
+  });
+  const desc = ['Temperature only', 'Effect differs for poor countries', '+ rainfall', '+ hot-country interactions'];
+  function cell(o, mode) {
+    if (!o) return '';
+    const sub = mode === 'se' ? `(${o.se.toFixed(3)})` : mode === 'p' ? `p = ${o.p.toFixed(3)}` : '';
+    return `${o.b.toFixed(3)}${stars(o.p)}${sub ? `<span class="se">${sub}</span>` : ''}`;
+  }
+  function drawTable() {
+    const mode = document.getElementById('unc').value;
+    const dim = j => focus && focus !== j + 1 ? ' class="dim"' : '';
+    let h = `<thead><tr><th></th>${D.table2.map((c, j) => `<th${dim(j)}>(${c.col}) <span class="se" style="font-weight:400">${desc[j]}</span></th>`).join('')}</tr></thead><tbody>`;
+    rows.forEach(([k, lab]) => {
+      h += `<tr${k === 'wtem' || k === 'wtem_poor' ? ' class="key"' : ''}><td>${lab}</td>${D.table2.map((c, j) => `<td${dim(j)}>${cell(c.coefs[k], mode)}</td>`).join('')}</tr>`;
+    });
+    h += `<tr><td><strong>Total effect in poor countries</strong><span class="se">sum of the two highlighted rows</span></td>${D.table2.map((c, j) => `<td${dim(j)}>${c.poor ? '<strong>' + cell(c.poor, mode) + '</strong>' : ''}</td>`).join('')}</tr>`;
+    h += `<tr><td>Observations</td>${D.table2.map((c, j) => `<td${dim(j)}>${c.N.toLocaleString('en-US')}</td>`).join('')}</tr>`;
+    h += `<tr><td>Country, region×year and poor×year fixed effects</td>${D.table2.map((c, j) => `<td${dim(j)}>Yes</td>`).join('')}</tr></tbody>`;
+    document.getElementById('t2').innerHTML = h;
+  }
+  cbox.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    focus = +b.dataset.c;
+    cbox.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    drawTable();
+  });
+  document.getElementById('unc').addEventListener('change', drawTable);
+  drawTable();
+
+  // ---------- 4. Sensitivity ----------
+  const sensLabels = ['Original: population-weighted temp., 2011 GDP data', 'Area-weighted temperature', 'Current World Bank GDP data', 'Both new: CRU temperature + current GDP'];
+  const sensShort = ['Original', 'Area-weighted', 'New GDP data', 'Both new'];
+  const sensChart = make('c-sens', {
+    type: 'scatter',
+    data: { datasets: [{ data: D.sens.map((s, i) => ({ x: s.effect, y: i })), err: D.sens.map(s => ci(s.effect, s.se)),
+      backgroundColor: c0.poor, borderColor: c0.poor, errColor: c0.poor, pointRadius: 6, pointHoverRadius: 8 }] },
+    options: {
+      indexAxis: 'y',
+      scales: {
+        x: { min: -2.5, max: 0.8, title: { display: true, text: 'Effect of +1 °C on growth in poor countries (pp)' } },
+        y: { type: 'linear', min: -0.6, max: 3.6, reverse: true, grid: { display: false },
+             afterBuildTicks: ax => { ax.ticks = sensLabels.map((_, i) => ({ value: i })); },
+             ticks: { callback: v => (window.innerWidth < 560 ? sensShort : sensLabels)[v] || '' } }
+      },
+      plugins: { legend: { display: false }, zeroLine: { axis: 'x' },
+        tooltip: { callbacks: { label: ctx => { const s = D.sens[ctx.dataIndex]; const e = ci(s.effect, s.se);
+          return `${fmt(s.effect)} pp (95% CI ${e[0].toFixed(2)} to ${e[1].toFixed(2)})`; } } } }
+    }
+  });
+
+  // ---------- 5. Rolling windows ----------
+  const R = D.rolling, win = document.getElementById('win');
+  win.max = R.length - 1; win.value = R.length - 1;
+  const rollChart = make('c-roll', {
+    type: 'line',
+    data: { labels: R.map(r => r.window_end), datasets: [
+      { label: 'hi', data: R.map(r => r.hi), borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: 'rgba(0,0,0,0)' },
+      { label: 'lo', data: R.map(r => r.lo), borderWidth: 0, pointRadius: 0, fill: false },
+      { label: 'Effect in poor countries', data: R.map(r => r.poor), borderColor: c0.poor, borderWidth: 2.2,
+        pointRadius: R.map(() => 0), pointBackgroundColor: c0.poor, tension: .2 }
+    ]},
+    options: {
+      animation: { duration: 250 },
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { title: { display: true, text: 'Last year of the 20-year window' }, ticks: { maxTicksLimit: 9 } },
+                y: { title: { display: true, text: 'Effect of +1 °C (pp)' } } },
+      plugins: { legend: { display: false }, zeroLine: { axis: 'y' },
+        tooltip: { filter: i => i.datasetIndex === 2, callbacks: {
+          title: it => `${R[it[0].dataIndex].window_start}–${R[it[0].dataIndex].window_end}`,
+          label: ctx => { const r = R[ctx.dataIndex]; return `${fmt(r.poor)} pp (95% CI ${r.lo.toFixed(2)} to ${r.hi.toFixed(2)})`; } } } }
+    }
+  });
+  function showWin() {
+    const i = +win.value, r = R[i], c = C();
+    rollChart.data.datasets[0].backgroundColor = c.poor + '33';
+    rollChart.data.datasets[2].borderColor = c.poor;
+    rollChart.data.datasets[2].pointBackgroundColor = c.poor;
+    rollChart.data.datasets[2].pointRadius = R.map((_, j) => j === i ? 6 : 0);
+    rollChart.update();
+    document.getElementById('win-out').textContent = r.window_end;
+    const sig = r.hi < 0 ? 'clearly negative' : r.lo > 0 ? 'clearly positive' : 'not distinguishable from zero';
+    document.getElementById('roll-readout').innerHTML =
+      `${r.window_start}–${r.window_end}: <span class="poor">${fmt(r.poor)} pp</span> per +1 °C (95% CI ${r.lo.toFixed(2)} to ${r.hi.toFixed(2)}), ${sig}.`;
+  }
+  win.addEventListener('input', showWin); showWin();
+  const P = D.periods;
+  document.getElementById('period-text').innerHTML =
+    `The most recent windows sit close to zero, which could hint at adaptation. But 20 years is short, and the bands are wide. A steadier test splits all the data into three periods in one regression. The effect in poor countries is ${P.map(p => `<strong>${fmt(p.poor_effect)}</strong> (${p.period.replace('-', '–')})`).join(', ')}, and these are not statistically different from each other. So <strong>the evidence for adaptation is weak, but we cannot rule it out either.</strong>`;
+
+  // ---------- Fill numbers inside the exam answers ----------
+  const fill = { 'iv-ols': fmt(D.iv.ols[0]) + ' pp', 'iv-iv': fmt(D.iv.iv[0]) + ' pp' };
+  document.querySelectorAll('[data-fill]').forEach(el => { el.textContent = fill[el.dataset.fill]; });
+
+  // ---------- Re-colour charts when the system theme changes ----------
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const c = C();
+    charts.forEach(themeChart);
+    f1chart.data.datasets[0].backgroundColor = f1chart.data.datasets[0].borderColor = c.poor;
+    f1chart.data.datasets[1].backgroundColor = f1chart.data.datasets[1].borderColor = c.rich;
+    sensChart.data.datasets[0].backgroundColor = sensChart.data.datasets[0].borderColor = sensChart.data.datasets[0].errColor = c.poor;
+    charts.forEach(ch => ch.update('none'));
+    showCountry(); showSample(+(sbox.querySelector('[aria-pressed="true"]').dataset.i)); showWin();
+  });
+})();
+</script>
+</body>
+</html>
