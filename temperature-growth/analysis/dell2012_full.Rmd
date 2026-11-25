@@ -1,7 +1,11 @@
 ---
-title: "Dell, Jones & Olken (2012): Replication and Extension"
-subtitle: "Temperature Shocks and Economic Growth (AEJ: Macro 4(3))"
-output: html_document
+title: 'Dell, Jones & Olken (2012): Replication and Extension'
+subtitle: 'Temperature Shocks and Economic Growth (AEJ: Macro 4(3))'
+output:
+  word_document: default
+  pdf_document:
+    latex_engine: xelatex   # handles °, × and other special characters
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -21,20 +25,21 @@ The CRU climate data are downloaded automatically in section 1 if `cru_country_y
 `install.packages(c("haven", "dplyr", "tidyr", "fixest", "countrycode", "ggplot2"))`
 
 ```{r packages}
-library(haven)
-library(dplyr)
-library(tidyr)
-library(fixest)
-library(countrycode)
-library(ggplot2)
+# Install any missing package automatically, then load all
+pkgs <- c("haven", "dplyr", "tidyr", "fixest", "countrycode", "ggplot2")
+missing <- pkgs[!pkgs %in% rownames(installed.packages())]
+if (length(missing) > 0) install.packages(missing, repos = "https://cloud.r-project.org")
+invisible(lapply(pkgs, library, character.only = TRUE))
 
 end_year <- 2024   # last year in the extension; 2025 GDP data are often incomplete
 
 # Check that the input files are there
 wdi_file <- list.files(".", pattern = "^API_NY.*GDP.*PCAP.*KN.*\\.csv$")[1]
 needed   <- c("climate_panel.dta", "AreaWeightedClimate.dta")
-stopifnot("Replication .dta files missing from this folder" = all(file.exists(needed)),
-          "WDI CSV (API_NY...csv) missing from this folder" = !is.na(wdi_file))
+if (!all(file.exists(needed)) || is.na(wdi_file))
+  stop("Input files not found in ", getwd(),
+       ". Put this .Rmd in the same folder as climate_panel.dta, ",
+       "AreaWeightedClimate.dta and the API_NY...csv file.")
 cat("Working directory:", getwd(), "\nWDI file:", wdi_file, "\n")
 ```
 
@@ -410,6 +415,8 @@ cat("Wald test: chi2(", nrow(R), ") =", round(W, 2),
     ", p =", round(pchisq(W, nrow(R), lower.tail = FALSE), 3), "\n")
 ```
 
+The poor-country effect is essentially flat across periods (Wald test p = `r round(pchisq(W, nrow(R), lower.tail = FALSE), 2)`): no evidence that poor countries have become less sensitive to hot years.
+
 ### Balanced panel
 
 Only countries observed in every period, so a change cannot come from countries entering later.
@@ -555,7 +562,12 @@ ggsave("output/fig2_poor_rich.pdf", fig2, width = 6, height = 4)
 
 With two independent noisy measures of the same true temperature, one can instrument one with the other (Topic 2b + 2c): if the errors are classical and independent, IV removes the attenuation bias. Here the paper's temperature (Matsuura & Willmott) is instrumented with CRU temperature, 1961–2003.
 
-Caveat for the report: both datasets are built from largely the same weather stations, so their errors are probably *correlated*. Then IV only partly removes the bias, i.e. the IV estimate is a lower bound (in absolute value) for the error-corrected effect.
+How to read the result:
+
+- **IV clearly larger (in absolute value) than OLS:** evidence of attenuation bias in the paper's temperature measure.
+- **IV close to OLS:** no evidence of strong attenuation in the paper's population-weighted measure.
+
+Caveat: both datasets are built largely from the same weather stations, so their errors are probably *correlated*. IV then cannot fully detect attenuation, so the result rules out a *large* bias, not measurement error as such.
 
 ```{r out-iv}
 cru_iso <- cru_w |> select(iso3, year, tem_cru = tem, pre_cru = pre)
@@ -576,6 +588,8 @@ round(rbind("OLS (same sample)"                     = poor_effect(m_ols_iv_sampl
 # First stage strength (should be far above 10)
 fitstat(m_iv, "ivwald")
 ```
+
+Result: OLS `r round(poor_effect(m_ols_iv_sample, "wtem")["effect"], 2)` vs. IV `r round(poor_effect(m_iv, "fit_wtem")["effect"], 2)` (SE `r round(poor_effect(m_iv, "fit_wtem")["se"], 2)`). The paper's own measure shows no sign of strong attenuation. The smaller effects in the extension therefore point to the **area-weighted** data: area weights average temperature over sparsely populated land where little production happens, so they are a noisier proxy for the heat that actually affects output (Topic 2b, attenuation bias).
 
 ### (b) Growth or level effect? Lagged temperature (≈ paper's Table 3)
 
@@ -662,4 +676,27 @@ ggsave("output/fig4_periods.pdf", fig4, width = 6, height = 4)
 
 ggsave("output/fig5_rolling.pdf", fig_roll, width = 8, height = 4)
 list.files("output")
+```
+
+# 6. Summary of key numbers
+
+All headline numbers for the report in one table (effect of +1°C on annual growth in poor countries, percentage points).
+
+```{r summary}
+key <- function(label, pe) data.frame(result = label, effect = pe[["effect"]],
+                                      se = pe[["se"]], p = pe[["p"]])
+summary_tab <- bind_rows(
+  key("Replication: Table 2, col. 3",               poor_effect(m3, "wtem")),
+  key("Placebo: next year's temperature",           poor_effect(m_lead, "wtem_lead")),
+  key("Sensitivity: area-weighted temp.",           poor_effect(m_aw, "atem")),
+  key("Sensitivity: current WDI vintage",           poor_effect(m_wdi, "wtem")),
+  key("Measurement error: IV with CRU",             poor_effect(m_iv, "fit_wtem")),
+  key("Cumulative effect, 5 lags",                  c(effect = lag_tab$cumulative_poor[4],
+                                                      se = lag_tab$se[4], p = lag_tab$p[4])),
+  key("Extension (B): new data 1961-2003",          c(effect = res$poor[2], se = res$se_poor[2], p = res$p_poor[2])),
+  key(paste0("Extension (C): new data 1961-", end_year), c(effect = res$poor[3], se = res$se_poor[3], p = res$p_poor[3])),
+  key(paste0("Extension (E): new data 2004-", end_year), c(effect = res$poor[5], se = res$se_poor[5], p = res$p_poor[5]))
+)
+summary_tab |> mutate(across(c(effect, se, p), ~ round(.x, 3)))
+write.csv(summary_tab, "output/summary_key_numbers.csv", row.names = FALSE)
 ```

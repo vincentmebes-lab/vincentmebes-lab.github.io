@@ -1,10 +1,10 @@
 # Builds temperature-growth/data.js for the website from the replication analysis.
-# Run from a folder that holds dell2012_full-5.Rmd and its input data
+# Run from a folder that holds dell2012_full.Rmd and its input data
 # (climate_panel.dta, AreaWeightedClimate.dta, the WDI API_NY...csv, cru_country_year.csv):
 #   LANG=en_US.UTF-8 Rscript export_site_data.R
 # Then copy the resulting data.js next to index.html.
 if (!file.exists("ws.RData")) {
-  knitr::purl("dell2012_full-5.Rmd", "analysis.R", quiet = TRUE)
+  knitr::purl("dell2012_full.Rmd", "analysis.R", quiet = TRUE)
   source("analysis.R")
   save.image("ws.RData")
 } else {
